@@ -1,0 +1,22 @@
+# https://taskfile.dev
+
+version: "3"
+
+tasks:
+  init:
+    cmds:
+      - go get github.com/go-task/task/v3/cmd/task
+      - go install github.com/go-task/task/v3/cmd/task
+      - go mod tidy
+  up:
+    cmds:
+      - docker compose up -d
+  down:
+    cmds:
+      - docker compose down
+  reset:
+    cmds:
+      - docker compose down -v
+  db:
+    cmds:
+      - docker compose exec mysql bash
