@@ -14,10 +14,29 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type Country struct {
+	Code           string  `json:"code" db:"Code"`
+	Name           string  `json:"name" db:"Name"`
+	Continent      string  `json:"continent" db:"Continent"`
+	Region         string  `json:"region" db:"Region"`
+	SurfaceArea    float32 `json:"surfaceArea" db:"SurfaceArea"`
+	IndepYear      int     `json:"indepYear" db:"IndepYear"`
+	Population     int     `json:"population" db:"Population"`
+	LifeExpectancy float32 `json:"lifeExpectancy" db:"LifeExpectancy"`
+	GNP            float32 `json:"gnp" db:"GNP"`
+	GNPOld         float32 `json:"gnpOld" db:"GNPOld"`
+	LocalName      string  `json:"localName" db:"LocalName"`
+	GovernmentForm string  `json:"governmentForm" db:"GovernmentForm"`
+	HeadOfState    string  `json:"headOfState" db:"HeadOfState"`
+	Capital        int     `json:"capital" db:"Capital"`
+	Code2          string  `json:"code2" db:"Code2"`
+	CapitalCity    City    `json:"capitalCity"`
+}
+
 type City struct {
 	ID          int    `json:"ID,omitempty" db:"ID"`
 	Name        string `json:"name,omitempty" db:"Name"`
-	CountryCode string `json:"cuntryCode,omitempty" db:"CountryCode"`
+	CountryCode string `json:"countryCode,omitempty" db:"CountryCode"`
 	District    string `json:"district,omitempty" db:"District"`
 	Population  int    `json:"population" db:"Population"`
 }
@@ -50,9 +69,21 @@ func dbConnect() *sqlx.DB {
 func main() {
 	e := echo.New()
 
+	e.GET("/cities", getAllCityHandler)
 	e.GET("/cities/:cityName", getCityInfoHandler)
+	e.GET("/countries/:countryName", getCountryInfoHandler)
+	e.POST("/addcity", addCityHandler)
 
 	e.Logger.Fatal(e.Start(":1323"))
+}
+
+func getAllCityHandler(c echo.Context) error {
+	db := dbConnect()
+	var cities []City
+	if err := db.Select(&cities, "SELECT * FROM city"); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
+	}
+	return c.JSON(http.StatusOK, &cities)
 }
 
 func getCityInfoHandler(c echo.Context) error {
@@ -67,5 +98,37 @@ func getCityInfoHandler(c echo.Context) error {
 		log.Fatalf("DB error: %s", err)
 	}
 
-	return c.JSON(http.StatusOK, response)
+	return c.JSON(http.StatusOK, &response)
+}
+
+func getCountryInfoHandler(c echo.Context) error {
+	countryName := c.Param("countryName")
+	var country Country
+
+	db := dbConnect()
+	err := db.Get(&country, "SELECT * FROM country WHERE Name = ?", countryName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("No such country Name = %s", countryName))
+	} else if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
+	}
+
+	if country.Capital != 0 {
+		db.Get(&country.CapitalCity, "SELECT * FROM city WHERE ID = ?", country.Capital)
+	}
+	return c.JSON(http.StatusOK, &country)
+}
+
+func addCityHandler(c echo.Context) error {
+	var newCity City
+	if err := c.Bind(&newCity); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Bad Request")
+	}
+	fmt.Printf("%+v", newCity)
+	db := dbConnect()
+	_, err := db.NamedExec(`INSERT INTO city (Name, CountryCode, District, Population) VALUES (:Name, :CountryCode, :District, :Population)`, newCity)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
+	}
+	return c.JSON(http.StatusOK, &newCity)
 }
