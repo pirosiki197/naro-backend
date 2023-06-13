@@ -41,6 +41,8 @@ type City struct {
 	Population  int    `json:"population" db:"Population"`
 }
 
+var db *sqlx.DB
+
 func dbConnect() *sqlx.DB {
 	jst, err := time.LoadLocation("Asia/Tokyo")
 	if err != nil {
@@ -62,11 +64,16 @@ func dbConnect() *sqlx.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err = db.Ping(); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println("connected")
 	return db
 }
 
 func main() {
+	db = dbConnect()
+
 	e := echo.New()
 
 	e.GET("/cities", getAllCityHandler)
@@ -78,10 +85,16 @@ func main() {
 }
 
 func getAllCityHandler(c echo.Context) error {
-	db := dbConnect()
+	country := c.QueryParam("country")
 	var cities []City
-	if err := db.Select(&cities, "SELECT * FROM city"); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
+	if country != "" {
+		if err := db.Select(&cities, "SELECT * FROM city WHERE CountryCode = (SELECT Code From country WHERE Name = ?)", country); err != nil {
+			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such country Name = %s", country))
+		}
+	} else {
+		if err := db.Select(&cities, "SELECT * FROM city"); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
+		}
 	}
 	return c.JSON(http.StatusOK, &cities)
 }
@@ -90,7 +103,6 @@ func getCityInfoHandler(c echo.Context) error {
 	cityName := c.Param("cityName")
 	fmt.Println(cityName)
 	var response City
-	db := dbConnect()
 	err := db.Get(&response, "SELECT * FROM city WHERE Name = ?", cityName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("No such city Name = %s", cityName))
@@ -105,7 +117,6 @@ func getCountryInfoHandler(c echo.Context) error {
 	countryName := c.Param("countryName")
 	var country Country
 
-	db := dbConnect()
 	err := db.Get(&country, "SELECT * FROM country WHERE Name = ?", countryName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("No such country Name = %s", countryName))
@@ -125,7 +136,6 @@ func addCityHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Bad Request")
 	}
 	fmt.Printf("%+v", newCity)
-	db := dbConnect()
 	_, err := db.NamedExec(`INSERT INTO city (Name, CountryCode, District, Population) VALUES (:Name, :CountryCode, :District, :Population)`, newCity)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("%+v", err))
